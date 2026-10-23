@@ -6,10 +6,8 @@ MCP server and the same safety rules:
 
 | | What you get | Install |
 |---|---|---|
-| **The ChorePilot plugin** (recommended) | 7 `chorepilot_*` tools, a bundled `chorepilot:household` skill, and a set-up prompt for the URL and token | `hermes plugins install <owner>/ChorePilot/hermes/chorepilot --enable` |
+| **The ChorePilot plugin** (recommended) | 7 `chorepilot_*` tools, a bundled `chorepilot:household` skill, and a set-up prompt for the URL and token | `hermes plugins install WestWaters/ChorePilot/hermes/chorepilot --enable` |
 | **Plain MCP** | every ChorePilot tool, discovered live from your house | `hermes mcp add chorepilot --url http://127.0.0.1:8770/mcp` |
-
-`<owner>` is the GitHub account this repository lives under.
 
 ## What Hermes can and can't do
 
@@ -54,7 +52,7 @@ never crosses the internet in the clear. Never port-forward 8770.
 ## 2a. In Hermes: the plugin
 
 ```bash
-hermes plugins install <owner>/ChorePilot/hermes/chorepilot --enable
+hermes plugins install WestWaters/ChorePilot/hermes/chorepilot --enable
 ```
 
 Hermes downloads only the `hermes/chorepilot` folder, runs its security scan, then asks for:

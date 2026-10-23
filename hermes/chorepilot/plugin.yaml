@@ -3,7 +3,7 @@ label: ChorePilot
 version: 0.7.0
 manifest_version: 2
 api_version: 1
-license: MIT
+license: Apache-2.0
 tags: [smart-home, chores, household, mcp]
 description: >
   ChorePilot's house and chore board as Hermes tools, through ChorePilot's own MCP server on this

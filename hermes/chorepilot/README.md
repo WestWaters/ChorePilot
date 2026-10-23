@@ -5,7 +5,7 @@ vacuum, blinds, appliances and the household chore board.
 
 ```bash
 chorepilot mcp token add <person> --client hermes          # on the ChorePilot machine
-hermes plugins install <owner>/ChorePilot/hermes/chorepilot --enable
+hermes plugins install WestWaters/ChorePilot/hermes/chorepilot --enable
 ```
 
 The plugin is a thin, stdlib-only client of ChorePilot's MCP server (`chorepilot run` or

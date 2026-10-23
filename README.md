@@ -403,10 +403,10 @@ chorepilot mcp token add Alex --client hermes        # shown once, stored hashed
 chorepilot run                                       # MCP on 127.0.0.1:8770
 
 # in Hermes (asks for CHOREPILOT_URL and CHOREPILOT_TOKEN)
-hermes plugins install <owner>/ChorePilot/hermes/chorepilot --enable
+hermes plugins install WestWaters/ChorePilot/hermes/chorepilot --enable
 ```
 
-`<owner>` is the GitHub account this repository lives under. Hermes gets seven `chorepilot_*`
+Hermes gets seven `chorepilot_*`
 tools (status, chore board, who has, done, whoami, the house's tool list, and a call for every
 device and chore action) and a `chorepilot:household` skill. Same rules as every other channel:
 water/heat actions wait for the person's own yes in Telegram or on the dashboard, a kid's token
