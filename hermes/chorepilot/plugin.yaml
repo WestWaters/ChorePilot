@@ -1,0 +1,33 @@
+name: chorepilot
+label: ChorePilot
+version: 0.7.0
+manifest_version: 2
+api_version: 1
+license: MIT
+tags: [smart-home, chores, household, mcp]
+description: >
+  ChorePilot's house and chore board as Hermes tools, through ChorePilot's own MCP server on this
+  machine, the LAN or Tailscale. ChorePilot's policy decides: water/heat actions wait for the
+  person's own yes in Telegram or the dashboard, kids' requests go to a parent, and unlocking is
+  never available. Every tool call is one HTTP request to CHOREPILOT_URL; nothing else.
+requires_hermes: ">=0.21.5"
+provides_tools:
+  - chorepilot_status
+  - chorepilot_chores
+  - chorepilot_who_has
+  - chorepilot_done
+  - chorepilot_whoami
+  - chorepilot_tools
+  - chorepilot_call
+provides_hooks: []
+requires_env:
+  - name: CHOREPILOT_URL
+    description: "ChorePilot's MCP address: http://127.0.0.1:8770/mcp on the same machine, http://<lan-host>:8770/mcp on the LAN, or https://<host>.<tailnet>.ts.net/mcp over Tailscale"
+    secret: false
+  - name: CHOREPILOT_TOKEN
+    description: "From `chorepilot mcp token add <person> --client hermes` on the ChorePilot machine (shown once; ChorePilot stores it hashed)"
+    secret: true
+optional_env:
+  - name: CHOREPILOT_TIMEOUT
+    description: "Seconds a call may wait, including a water/heat confirmation (default 150; ChorePilot itself gives up after 120)"
+    password: false

@@ -392,6 +392,31 @@ your phone.
 *Grok is a trademark of xAI, and Claude is a trademark of Anthropic. ChorePilot is an
 independent project and is not affiliated with either company.*
 
+## Use it from Hermes Agent
+
+ChorePilot installs as a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+(Nous Research), the same way Hermes installs any plugin:
+
+```bash
+# on the ChorePilot machine
+chorepilot mcp token add Alex --client hermes        # shown once, stored hashed
+chorepilot run                                       # MCP on 127.0.0.1:8770
+
+# in Hermes (asks for CHOREPILOT_URL and CHOREPILOT_TOKEN)
+hermes plugins install <owner>/ChorePilot/hermes/chorepilot --enable
+```
+
+`<owner>` is the GitHub account this repository lives under. Hermes gets seven `chorepilot_*`
+tools (status, chore board, who has, done, whoami, the house's tool list, and a call for every
+device and chore action) and a `chorepilot:household` skill. Same rules as every other channel:
+water/heat actions wait for the person's own yes in Telegram or on the dashboard, a kid's token
+goes to the parents' queue, unlocking is never available. Hermes on another machine: `tailscale
+serve --bg 8770` and `https://<machine>.<tailnet>.ts.net/mcp`, or `--lan` on a trusted network.
+Prefer no plugin? `hermes mcp add chorepilot --url http://127.0.0.1:8770/mcp` works too.
+Details, small-model tips and a test run: [docs/HERMES.md](docs/HERMES.md).
+
+*Hermes Agent is a project of Nous Research; ChorePilot is not affiliated with it.*
+
 ## Configuration and files
 
 Everything lives in `~/.config/chorepilot/` (override with `CHOREPILOT_CONFIG_DIR`):
@@ -486,6 +511,7 @@ first run (the old directory is left alone), an existing `control.json` keeps wo
 - [docs/RESEARCH.md](docs/RESEARCH.md): devices, bandwidth and model-fit research
 - [docs/UI-RESEARCH.md](docs/UI-RESEARCH.md): what the best home, chore and assistant apps do, and how the dashboard answers them
 - [docs/REMOTE-ACCESS.md](docs/REMOTE-ACCESS.md): using the dashboard from your phone or office, safely
+- [docs/HERMES.md](docs/HERMES.md): the Hermes Agent plugin and MCP setup
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## Licence

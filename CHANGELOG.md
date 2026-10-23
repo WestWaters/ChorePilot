@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Hermes Agent plugin** (`hermes/chorepilot/`): `hermes plugins install
+  <owner>/ChorePilot/hermes/chorepilot --enable`. Seven `chorepilot_*` tools and a
+  `chorepilot:household` skill, as a stdlib client of `chorepilot mcp --http`, so the policy,
+  confirmations and tokens are the MCP server's, unchanged. Asks for `CHOREPILOT_URL` and
+  `CHOREPILOT_TOKEN` at install; plain HTTP only to this machine or a private network. Passes
+  Hermes's own `hermes plugins validate`. [docs/HERMES.md](docs/HERMES.md).
+
 ## 0.7.0
 
 The dashboard's second design: a technical, high-performance look, dark first.
