@@ -1,7 +1,7 @@
 # Home Assistant add-on: ChorePilot, your smart-home AI agent assistant.
 # https://developers.home-assistant.io/docs/add-ons/configuration
 name: ChorePilot
-version: "0.7.0"
+version: "0.7.1"
 slug: chorepilot
 description: >-
   Your smart-home AI agent assistant: local-first, runs your appliances and keeps the

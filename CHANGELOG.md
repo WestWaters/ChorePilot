@@ -1,7 +1,29 @@
 # Changelog
 
-## Unreleased
+## 0.7.1
 
+Dashboard polish, and rate limits that no longer get in a person's way.
+
+- **Ask the house on every view**: a command palette (the top bar button, or Cmd/Ctrl+K)
+  opens the same console as a sheet anywhere, with the same `/api/ask` flow, confirm cards
+  and policy. The conversation is shared with the console on Home.
+- **Phone home**: the hero readouts are a compact 2x2 grid with smaller numerals, so Ask the
+  house is above the fold at 390x844, and nothing hides behind the docked input bar (bottom
+  space, scroll padding and toasts account for it and for the safe-area insets).
+- **Device grid on wide screens**: rooms share one responsive column grid and small rooms pack
+  in beside bigger ones, so 1440 px and wider fill cleanly instead of stopping at four tiles;
+  the Devices page can use up to 1920 px. Other tile grids use `auto-fill` with a 220 px minimum.
+- **Undo a "done"**: right after marking a chore done the toast offers Undo, and finished chores
+  have an Undo button. An adult can undo any completion; the person who marked it can undo
+  their own within 2 minutes; kids can't undo other people's. Points and streaks go back, a
+  pending parent approval is cancelled, untouched follow-ups are removed and their rotation steps
+  back. Audited (`undo_chore`) and shown in Activity. `POST /api/chores/<id>/undo`.
+- **Rate limits per safety tier**, configurable in `house.json` `"rate_limits"`: tier 1 (lights,
+  blinds, speakers...) 30 per minute per device; MCP / external agents 6 per minute per device
+  and 30 per 10 min, on a budget of their own; tier 2 (water / heat) and tier 3 (security) stay
+  at 6 per 10 min across the house with 60 s between starts of one device. Before, 6 writes per
+  10 min were shared by every device, so quick light toggling got blocked.
+  [docs/CONTROL.md](docs/CONTROL.md#31-rate-limits).
 - **Hermes Agent plugin** (`hermes/chorepilot/`): `hermes plugins install
   WestWaters/ChorePilot/hermes/chorepilot --enable`. Seven `chorepilot_*` tools and a
   `chorepilot:household` skill, as a stdlib client of `chorepilot mcp --http`, so the policy,

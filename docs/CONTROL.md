@@ -142,7 +142,8 @@ and [programs-and-options](https://api-docs.home-connect.com/programs-and-option
 - 5 program starts per minute;
 - 10 consecutive errors trigger a 10-minute block.
 
-ChorePilot's own limiter is stricter: 6 writes per 10 min and 60 s between starts. Status
+ChorePilot's own limiter is stricter: 6 water / heat writes per 10 min and 60 s between starts
+(see [3.1](#31-rate-limits)). Status
 polling for `notify_when_done` runs every 30 s, about 300 requests for a 2.5 h program.
 
 ### 2.4 `mqtt`: ESPHome devices, including a BSH internal-bus adapter
@@ -218,11 +219,47 @@ ESPHome's default topics: state on `<prefix>/<component>/<name>/state`, commands
 | Schema validation | always | The model can only pick from the program enum and five known options; `delay_minutes` is limited to 0..1440. Anything else is rejected and reported back to the model |
 | Interlocks | always | The bridge refuses to start when the appliance is offline, a program is already running, paused or delayed, the door is open, or **remote start is off**. Pause, resume and cancel are checked against the current state |
 | Confirmation | `--confirm heat` | `start_program` and `resume` open the water valve and the heater, so a human must answer *y*. Non-interactive runs (no TTY) count as **no**, unless `--yes`. `--confirm all` also asks for pause and cancel; `--confirm never` asks for nothing |
-| Rate limit | 6 writes / 10 min, 60 s between starts | Stops a looping model from hammering the machine or the vendor API. Persisted in `~/.cache/chorepilot/control-ratelimit.json` across runs |
+| Rate limit | per safety tier ([3.1](#31-rate-limits)): starts 6 / 10 min house-wide and 60 s between starts of one appliance; pause / cancel 30 / min per appliance | Stops a looping model from hammering the machine or the vendor API. Persisted in `~/.cache/chorepilot/control-ratelimit.json` across runs |
 | Chains | `start_when_done` | Confirmed when scheduled. The target starts only once its remote start is armed *after* the first appliance finished (loading opens the door, which disarms it), and every interlock is re-checked at that moment. If the first appliance stops early, nothing starts. Gives up after 3 h. `control cancel -a <target>` removes it |
 | Dry run | `--dry-run` | Reads are real; writes return the exact HTTP requests or MQTT publishes they would have sent (`would_send`) |
 | Secrets | env or `~/.config/chorepilot` (0600) | `HA_TOKEN`, `HOME_CONNECT_TOKEN`, `HOME_CONNECT_CLIENT_ID`/`_SECRET`, `MQTT_USER`/`MQTT_PASSWORD`. Never the repo. Tool results sent back to the model carry outcomes only, not request URLs or headers |
 | Audit | in memory | `Bridge.audit` lists every tool call, its arguments and its result |
+
+### 3.1 Rate limits
+
+Every write goes through one limiter, with limits per safety tier. They exist to stop a looping
+model or a runaway agent, not to slow a person down at the dashboard.
+
+| Tier | What | Default limit | Counted |
+|---|---|---|---|
+| 1 | lights, blinds, speakers, vacuum, locking, pause / cancel | 30 per minute **per device** | per device, people and agents apart |
+| 1, from an MCP / external agent | the same actions | 6 per minute per device, and 30 per 10 min across the house | the agent's own budget |
+| 2 | water and heat: dishwasher / washer / dryer starts and resumes, oven, sprinklers, water heater | 6 per 10 min **across the house**, and 60 s between starts of the same device | everyone together |
+| 3 | security: unlock, disarm, open the garage | 6 per 10 min across the house, and 60 s between two of them on the same device | everyone together |
+
+A person toggling the living room light ten times in a row is never blocked. An agent stuck in
+a loop is stopped after 6 taps on one device, and its taps never use up the dashboard's budget.
+Tiers 2 and 3 stay strict whoever asks: the policy engine still decides *whether* an action may
+run (confirmation, approval, PIN); the limiter only decides *how often*.
+
+Change any of it in `house.json` under `"rate_limits"`. Each tier takes `per_device` and
+`house` (`{"max": n, "window_s": s}`, or `null` for no limit) and `start_gap_s`; `"agent"` holds
+the stricter limits for MCP and other external callers, merged over the tier they apply to:
+
+```json
+"rate_limits": {
+  "tier1": {"per_device": {"max": 30, "window_s": 60}},
+  "tier2": {"house": {"max": 6, "window_s": 600}, "start_gap_s": 60},
+  "tier3": {"house": {"max": 6, "window_s": 600}, "start_gap_s": 60},
+  "agent": {"tier1": {"per_device": {"max": 6, "window_s": 60},
+                      "house": {"max": 30, "window_s": 600}}}
+}
+```
+
+Only the keys you give change; the rest keep their defaults. A refusal reads like
+`rate limit: 30 actions per minute on the living room light` and is in the audit log. Before
+0.7.1 there was one budget of 6 writes per 10 min for every device together, so a few quick
+light taps could block the dishwasher.
 
 ---
 

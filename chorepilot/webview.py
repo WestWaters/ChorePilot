@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta
 
 from .appliance import BackendError
-from .chores import when
+from .chores import MARKED, UNDO_WINDOW_S, when
 from .devtypes import get_type
 from .devtypes.program import TOOL_TIERS
 
@@ -220,6 +220,23 @@ def board_full(db, me, now=None):
     open_ = db.instances(("open", "pending_approval"))
     week = db.instances(None, since=week0)
     pts7 = db.points(7)
+    me_p = next((p for p in people if p["name"] == me), None)
+    adult = bool(me_p and me_p["role"] in ("owner", "adult"))
+    done_rows = [i for i in db.instances(("done", "approved"), since=now - 7 * 86400)
+                 if i.get("completed_at")]
+    marks = db.done_marks([i["id"] for i in done_rows + open_ if i["state"] in MARKED])
+
+    def undo(i):
+        """Who may undo this "done" and until when (None = no limit, for an adult)."""
+        if i["state"] not in MARKED or not me_p:
+            return False, None
+        if adult:
+            return True, None
+        m = marks.get(i["id"])
+        if not m or (m["by"] or "").lower() != me.lower():
+            return False, None
+        until = m["at"] + UNDO_WINDOW_S
+        return until > now, until
 
     def verify_text(c):
         v = (c or {}).get("verify")
@@ -246,7 +263,9 @@ def board_full(db, me, now=None):
                 "verified": str(i.get("verified_by") or "").startswith("device:"),
                 "verified_by": (i.get("verified_by") or "").replace("device:", "") or None,
                 "auto": verify_text(c),
-                "mine": i["assignee"] in (None, me)}
+                "mine": i["assignee"] in (None, me),
+                "marked_by": (marks.get(i["id"]) or {}).get("by"),
+                "can_undo": undo(i)[0], "undo_until": undo(i)[1]}
 
     out_people = []
     for idx, p in enumerate(people):
@@ -280,8 +299,7 @@ def board_full(db, me, now=None):
                           "schedule": w.get("schedule"), "auto": verify_text(c),
                           "people": [db.person(x)["name"] for x in c["rotation"]
                                      if db.person(x, required=False)]})
-    done = [i for i in db.instances(("done", "approved"), since=now - 7 * 86400)
-            if i.get("completed_at")]
+    done = list(done_rows)
     done.sort(key=lambda i: -i["completed_at"])
     open_sorted = sorted(open_, key=lambda i: (i["state"] != "open", i["due"] or 9e12))
     return {"people": out_people, "open": [inst(i) for i in open_sorted],
@@ -335,6 +353,14 @@ def _sentence(r):
         return f"{who} {'approved' if tool == 'approve' else 'declined'}: {s}"
     if tool == "complete_chore":
         return f"{who} marked {a.get('chore', 'a chore')} done"
+    if tool == "undo_chore":
+        if not r.get("ok"):
+            return f"{who} tried to undo a chore"
+        c = str(a.get("chore") or "a chore")
+        bits = [f"done by {a['person']}"] if a.get("person") else []
+        if a.get("points"):
+            bits.append(f"{a['points']} point{'' if a['points'] == 1 else 's'} taken back")
+        return f"{who} undid {c[:1].lower() + c[1:]}" + (f" ({', '.join(bits)})" if bits else "")
     if tool == "assign_chore":
         return f"{who} gave {a.get('chore')} to {a.get('person')}"
     if tool == "get_status":
@@ -383,9 +409,10 @@ def activity(audit_rows, db, limit=80, now=None):
         text = _sentence(r)
         if outcome in ("queued", "declined"):
             text = _asked(r)
-        elif outcome in ("failed", "denied") and r.get("tool") not in ("approve", "deny"):
+        elif outcome in ("failed", "denied") and r.get("tool") not in ("approve", "deny",
+                                                                       "undo_chore"):
             text = _asked(r).replace(" asked to ", " tried to ", 1)
-        items.append({"t": r.get("ts") or 0, "kind": "action", "text": text,
+        items.append({"t": r.get("ts") or 0, "kind": "action", "text": text, "tool": r.get("tool"),
                       "device": a.get("device") or a.get("appliance"),
                       "via": SOURCES.get(r.get("source"), r.get("source") or ""),
                       "client": r.get("client"), "outcome": outcome,

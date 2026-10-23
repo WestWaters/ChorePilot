@@ -91,6 +91,7 @@ const P = {
   swap: '<path d="M7 7.5h11.5l-3-3M17 16.5H5.5l3 3"/>',
   timer: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2 1.5M10 2.5h4"/>',
   refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3L19.5 9"/><path d="M19.5 4.5V9H15"/>',
+  undo: '<path d="M9 14.5 4.5 10 9 5.5"/><path d="M4.5 10H14a5.5 5.5 0 0 1 0 11h-3"/>',
 };
 const ICON_OF = { garage: "garage_door", alarm: "alarm_panel" };
 function icon(name, size = 24, sw = 1.75) {
@@ -133,15 +134,17 @@ function applyTheme() {
 }
 applyTheme();
 /* ------------------------------------------------------------------ toasts */
-function toast(msg, bad) {
+function toast(msg, bad, action) {
   const el = document.createElement("div");
   el.className = "toast" + (bad ? " bad" : "");
-  put(el, html`${icon(bad ? "alert" : "check", 18, 2)}<span>${msg}</span>`);
+  put(el, html`${icon(bad ? "alert" : "check", 18, 2)}<span class="toast-msg">${msg}</span>${action ? html`<button class="toast-act" type="button">${action.label}</button>` : ""}`);
   const box = $("#toasts");
   while (box.children.length >= 2) box.firstElementChild.remove();
   box.appendChild(el);
-  setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; }, bad ? 5200 : 2800);
-  setTimeout(() => el.remove(), bad ? 5600 : 3200);
+  const life = action ? Math.min(action.ms || 8000, 15000) : bad ? 5200 : 2800;
+  const fade = setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; }, life);
+  const gone = setTimeout(() => el.remove(), life + 400);
+  if (action) $(".toast-act", el).onclick = () => { clearTimeout(fade); clearTimeout(gone); el.remove(); action.run(); };
 }
 
 /* ------------------------------------------------------------------ sheets (dialogs) */
@@ -398,6 +401,10 @@ async function signedIn() {
   put($(".brand .mark"), icon("mark", 18, 2.2));
   put($("#top-me"), avatar(S.me, "sm"));
   put($("#bell"), html`${icon("bell", 22)}<span class="badge-dot" id="bell-count" hidden></span>`);
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  put($("#ask-open"), html`${icon("ask", 18, 2)}<span class="ask-open-l">Ask the house</span><kbd>${mac ? "\u2318K" : "Ctrl K"}</kbd>`);
+  $("#ask-open").setAttribute("aria-keyshortcuts", mac ? "Meta+K" : "Control+K");
+  $("#ask-open").onclick = () => openPalette();
   $("#top-me").onclick = e => meMenu(e.currentTarget);
   $("#bell").onclick = () => go("approvals");
   drawNav();
@@ -459,6 +466,7 @@ function fromHash() {
   const r = NAV.some(n => n.id === parts[0]) ? parts[0] : "home";
   if (r === "settings" && !isAdult()) { go("home"); return; }
   const changed = r !== S.route || parts[1] !== S.sub;
+  if (changed && palette) closeSheet(palette);
   S.route = r; S.sub = parts[1] || null;
   if (changed || !$(".page")) mount();
   refresh(true);
@@ -469,7 +477,8 @@ function mount() {
   document.title = `${S.route === "home" ? S.me.household : titles[S.route]} · ChorePilot`;
   const main = $("#main");
   main.classList.remove("has-composer");
-  put(main, html`<div class="page ${S.route === "home" ? "" : "wrap"}" id="page"></div>`);
+  document.documentElement.classList.remove("composer");
+  put(main, html`<div class="page ${S.route === "home" ? "" : "wrap"} ${S.route === "devices" ? "wrap-wide" : ""}" id="page"></div>`);
   ({ home: mountHome, devices: mountDevices, chores: mountChores, activity: mountActivity,
      approvals: mountApprovals, settings: mountSettings })[S.route]($("#page"));
   drawNav();
@@ -495,6 +504,7 @@ function update() {
   ({ home: updateHome, devices: updateDevices, chores: updateChores, activity: updateActivity,
      approvals: updateApprovals, settings: () => {} })[S.route]();
   if (S.sheetDev) updateDeviceSheet();
+  if (palette) updateConsole(palette.sheet);
 }
 
 /* ------------------------------------------------------------------ HOME */
@@ -512,21 +522,7 @@ function mountHome(page) {
       <div class="running" id="running"></div>
     </div></section>
     <div class="wrap">
-      <section class="console" aria-label="Ask the house">
-        <div class="console-head"><p class="eyebrow">Ask the house</p><span class="model" id="console-model"></span></div>
-        <div class="ask" id="ask">
-          <form class="ask-bar" id="askf" role="search">
-            <span class="prompt" aria-hidden="true">&gt;</span>
-            <label class="sr" for="askq">Ask the house</label>
-            <input class="ask-input" id="askq" autocomplete="off" enterkeyhint="send" maxlength="500" placeholder="Ask the house">
-            <button class="ask-mic" type="button" id="mic" aria-label="Speak" hidden>${icon("mic", 22)}</button>
-            <button class="ask-send" type="submit" id="asks" aria-label="Send" disabled>${icon("send", 18, 2.2)}<span class="lbl" aria-hidden="true">Run</span></button>
-          </form>
-        </div>
-        <div class="chips ask-suggest scroll" id="suggest"></div>
-        <div class="convo" id="convo" aria-live="polite"></div>
-        <p class="ask-hint" id="askhint"></p>
-      </section>
+      <section class="console" id="console-home" aria-label="Ask the house">${consoleHtml("home")}</section>
       <div id="approvals-home"></div>
       <div class="home-grid">
         <div>
@@ -540,10 +536,7 @@ function mountHome(page) {
         </div>
       </div>
     </div>`);
-  const q = $("#askq");
-  q.addEventListener("input", () => { $("#asks").disabled = !q.value.trim(); });
-  $("#askf").onsubmit = e => { e.preventDefault(); const t = q.value.trim(); if (t) { q.value = ""; $("#asks").disabled = true; ask(t); } };
-  setupVoice();
+  wireConsole($("#console-home"));
   drawTurns();
   drawAI();
 }
@@ -628,25 +621,7 @@ function updateHome() {
     : html`<span class="fact"><span class="dot" aria-hidden="true"></span>All quiet. Nothing is running and nothing needs you.</span>`);
   drawKpis(H);
   drawRunning(H);
-  const llm = H.llm || {};
-  const hint = $("#askhint");
-  if (!llm.configured) put(hint, html`${icon("cpu", 16)}<span>No assistant model yet, so asking is off. Device controls still work.${isOwner() ? html` <a href="#/settings/assistant">Set one up</a>` : ""}</span>`);
-  else if (!llm.ok) put(hint, html`${icon("alert", 16)}<span>The model server isn't answering right now${isOwner() ? html`. <a href="#/settings/assistant">Check it</a>` : ""}.</span>`);
-  else put(hint, html`${icon("shield", 16)}<span>Runs on your network. Water, heat and locks always ask you first. Every action is logged.</span>`);
-  const mname = String(llm.model || "").split("/").pop().replace(/\.gguf$/i, "");
-  $("#console-model").textContent = llm.configured ? (mname || "local model") + (llm.ok ? " · ready" : " · offline") : "no model";
-  $("#askq").disabled = !llm.configured;
-  $("#mic").disabled = !llm.configured;
-  $("#ask").classList.toggle("off", !llm.configured);
-  $("#ask").classList.toggle("dock", phone() && !!llm.configured);
-  $("#main").classList.toggle("has-composer", phone() && !!llm.configured);
-  const types = new Set(H.devices.map(d => d.type));
-  const sugg = ["Who has the dishes this week?"].concat(Object.keys(SUGGEST_BY_TYPE).filter(t => types.has(t)).map(t => SUGGEST_BY_TYPE[t])).slice(0, 5);
-  const sg = $("#suggest");
-  if (!S.turns.length && llm.configured) {
-    put(sg, html`${sugg.map(x => html`<button class="chip" type="button" data-s="${x}">${x}</button>`)}`);
-    $$("[data-s]", sg).forEach(b => b.onclick = () => ask(b.dataset.s));
-  } else put(sg, "");
+  updateConsole($("#console-home"));
   const ap = H.approvals, ah = $("#approvals-home");
   const items = (ap.can_decide ? ap.approvals : []).slice(0, 3);
   if (items.length || ap.confirmations.length) {
@@ -682,6 +657,83 @@ function updateHome() {
   put($("#sec-recent"), html`${secHead("Audit trail", "Recently", "Activity", "#/activity")}
     ${rec.length ? html`<ul class="tl compact">${rec.slice(0, 6).map(tlItem)}</ul>` : html`<p class="muted">Nothing yet today.</p>`}`);
 }
+
+/* ------------------------------------------------------------------ the console: Ask the house
+   One component, two places: inline on Home, and as a palette sheet on every view (the top
+   bar button, Cmd/Ctrl+K). Both share the conversation and the same /api/ask flow. */
+function consoleHtml(where, id) {
+  const pal = where === "palette";
+  return html`<div class="console-head"><p class="eyebrow" ${pal ? raw(`id="${id}"`) : ""}>Ask the house</p><span class="model" data-c="model"></span>
+      ${pal ? html`<button class="icon-btn" type="button" data-close aria-label="Close">${icon("x", 20)}</button>` : ""}</div>
+    <div class="ask" data-c="ask">
+      <form class="ask-bar" data-c="form" role="search">
+        <span class="prompt" aria-hidden="true">&gt;</span>
+        <label class="sr" for="askq-${where}">Ask the house</label>
+        <input class="ask-input" id="askq-${where}" data-c="q" autocomplete="off" enterkeyhint="send" maxlength="500" placeholder="Ask the house" ${pal ? raw("autofocus") : ""}>
+        <button class="ask-mic" type="button" data-c="mic" aria-label="Speak" hidden>${icon("mic", 22)}</button>
+        <button class="ask-send" type="submit" data-c="send" aria-label="Send" disabled>${icon("send", 18, 2.2)}<span class="lbl" aria-hidden="true">Run</span></button>
+      </form>
+    </div>
+    <div class="chips ask-suggest scroll" data-c="suggest"></div>
+    <div class="convo" data-c="convo" aria-live="polite"></div>
+    <p class="ask-hint" data-c="hint"></p>`;
+}
+const C = (root, k) => root && root.querySelector(`[data-c="${k}"]`);
+function wireConsole(root) {
+  const q = C(root, "q"), send = C(root, "send");
+  q.addEventListener("input", () => { send.disabled = !q.value.trim(); });
+  C(root, "form").onsubmit = e => { e.preventDefault(); const t = q.value.trim(); if (t) { q.value = ""; send.disabled = true; ask(t, root); } };
+  setupVoice(root);
+}
+function updateConsole(root) {
+  if (!root || !S.home) return;
+  const H = S.home, llm = H.llm || {}, home = root.id === "console-home";
+  const hint = C(root, "hint");
+  if (!llm.configured) put(hint, html`${icon("cpu", 16)}<span>No assistant model yet, so asking is off. Device controls still work.${isOwner() ? html` <a href="#/settings/assistant">Set one up</a>` : ""}</span>`);
+  else if (!llm.ok) put(hint, html`${icon("alert", 16)}<span>The model server isn't answering right now${isOwner() ? html`. <a href="#/settings/assistant">Check it</a>` : ""}.</span>`);
+  else put(hint, html`${icon("shield", 16)}<span>Runs on your network. Water, heat and locks always ask you first. Every action is logged.</span>`);
+  const mname = String(llm.model || "").split("/").pop().replace(/\.gguf$/i, "");
+  C(root, "model").textContent = llm.configured ? (mname || "local model") + (llm.ok ? " · ready" : " · offline") : "no model";
+  C(root, "q").disabled = !llm.configured;
+  C(root, "mic").disabled = !llm.configured;
+  C(root, "ask").classList.toggle("off", !llm.configured);
+  if (home) {
+    const dock = phone() && !!llm.configured;
+    C(root, "ask").classList.toggle("dock", dock);
+    $("#main").classList.toggle("has-composer", dock);
+    document.documentElement.classList.toggle("composer", dock);
+  }
+  const types = new Set(H.devices.map(d => d.type));
+  const sugg = ["Who has the dishes this week?"].concat(Object.keys(SUGGEST_BY_TYPE).filter(t => types.has(t)).map(t => SUGGEST_BY_TYPE[t])).slice(0, 5);
+  const sg = C(root, "suggest");
+  if (!S.turns.length && llm.configured) {
+    if (sg.dataset.n !== String(sugg.length)) {
+      put(sg, html`${sugg.map(x => html`<button class="chip" type="button" data-s="${x}">${x}</button>`)}`);
+      sg.dataset.n = sugg.length;
+      $$("[data-s]", sg).forEach(b => b.onclick = () => ask(b.dataset.s, root));
+    }
+  } else { put(sg, ""); delete sg.dataset.n; }
+}
+let palette = null;
+function openPalette() {
+  if (!S.me || $("#shell").hidden) return;
+  if (palette) { const q = C(palette.sheet, "q"); if (q && !q.disabled) q.focus(); return; }
+  palette = openSheet((sh, id, close) => {
+    sh.classList.add("palette");
+    put(sh, html`<div class="sheet-grab" aria-hidden="true"></div>${consoleHtml("palette", id)}`);
+    $("[data-close]", sh).onclick = close;
+    wireConsole(sh);
+    updateConsole(sh);
+  }, { wide: true, onClose: () => { palette = null; } });
+  palette.scrim.classList.add("palette-scrim");
+  drawTurns();
+}
+document.addEventListener("keydown", e => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || String(e.key).toLowerCase() !== "k") return;
+  if (!S.me || $("#shell").hidden) return;
+  e.preventDefault();
+  if (palette && sheets[sheets.length - 1] === palette) closeSheet(palette); else openPalette();
+});
 
 /* ------------------------------------------------------------------ the Local AI panel */
 async function loadSystem() {
@@ -732,12 +784,13 @@ function drawAI() {
     <div class="ai-host"><p class="eyebrow dim">${S.sys.local === false ? "This dashboard's host" : "Host"}</p><div class="v">${host.label || "Unknown hardware"}</div>
       <div class="faint">${[host.cpu && host.cpu !== host.gpu ? host.cpu : null, host.free_gb != null ? `${host.free_gb} GB free now` : null, host.mem_bw_gbs ? `${Math.round(host.mem_bw_gbs)} GB/s memory` : null].filter(Boolean).join(" · ")}</div></div></div>`);
 }
-function ask(text) {
+function ask(text, root) {
   const t = { text, state: "sending", job: null, data: null, at: Date.now() };
   S.turns.unshift(t); S.turns = S.turns.slice(0, 4);
   drawTurns();
-  if (phone()) requestAnimationFrame(() => {     // the console sits above the docked bar: bring the trace into view
-    const c = $("#convo");
+  $$("[data-c=suggest]").forEach(sg => { put(sg, ""); delete sg.dataset.n; });
+  if (phone() && root && root.id === "console-home") requestAnimationFrame(() => {     // the console sits above the docked bar: bring the trace into view
+    const c = C(root, "convo");
     if (c) window.scrollTo({ top: c.getBoundingClientRect().top + window.scrollY - 72, behavior: reduceMotion() ? "auto" : "smooth" });
   });
   run(t);
@@ -784,8 +837,11 @@ function argsInline(a) {
 }
 const stepLine = (cls, t, ic, body) => html`<li class="step ${cls}"><span class="t">${t}</span><span class="step-ico">${icon(ic, 14, 2.4)}</span><span>${body}</span></li>`;
 function drawTurns() {
-  const c = $("#convo");
-  if (!c) return;
+  const boxes = $$("[data-c=convo]");
+  const top = palette ? C(palette.sheet, "convo") : null;
+  boxes.forEach(c => drawTurnsIn(c, !top || c === top));
+}
+function drawTurnsIn(c, focus) {
   if (!S.turns.length) { put(c, ""); return; }
   put(c, html`${S.turns.map((t, idx) => {
     const d = t.data || {};
@@ -829,7 +885,7 @@ function drawTurns() {
       catch (err) { toast(err.message, true); }
     };
   });
-  const f = $("[data-pend] input, [data-pend] button[value=yes]", c);
+  const f = focus && $("[data-pend] input, [data-pend] button[value=yes]", c);
   if (f) f.focus({ preventScroll: true });
 }
 function pendingCard(p) {
@@ -842,9 +898,9 @@ function pendingCard(p) {
     <div class="btn-row"><button class="btn btn-primary no-arrow" value="yes" type="submit">${p.kind === "confirm" ? "Yes, do it" : "Confirm"}</button>
     <button class="btn" value="no" type="submit">No</button></div></form>`;
 }
-function setupVoice() {
+function setupVoice(root) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const mic = $("#mic");
+  const mic = C(root, "mic"), q = C(root, "q"), send = C(root, "send");
   if (!SR || !mic) return;
   mic.hidden = false;
   let rec = null;
@@ -855,9 +911,9 @@ function setupVoice() {
     mic.classList.add("listening"); mic.setAttribute("aria-label", "Stop listening");
     rec.onresult = e => {
       const txt = Array.from(e.results).map(r => r[0].transcript).join(" ");
-      $("#askq").value = txt; $("#asks").disabled = !txt.trim();
+      q.value = txt; send.disabled = !txt.trim();
     };
-    const end = () => { mic.classList.remove("listening"); mic.setAttribute("aria-label", "Speak"); rec = null; $("#askq").focus(); };
+    const end = () => { mic.classList.remove("listening"); mic.setAttribute("aria-label", "Speak"); rec = null; q.focus(); };
     rec.onend = end;
     rec.onerror = ev => { end(); if (ev.error === "not-allowed") toast("Microphone access is blocked for this page.", true); };
     try { rec.start(); } catch (e) { end(); }
@@ -924,17 +980,32 @@ function updateDevices() {
   $$("[data-room]").forEach(b => b.onclick = () => { S.roomFilter = b.dataset.room; delete $("#dev-list").dataset.shown; updateDevices(); });
   const shown = rooms.filter(r => S.roomFilter === "All" || r === S.roomFilter);
   const list = $("#dev-list");
+  list.classList.toggle("rooms", devs.length > 0);
   put(list, devs.length ? html`${shown.map(r => {
       const ds = devs.filter(d => d.room === r), lit = ds.filter(d => d.active).length;
-      return html`<section class="room" aria-labelledby="room-${r.replace(/\W/g, "")}">
+      return html`<section class="room" data-n="${ds.length}" aria-labelledby="room-${r.replace(/\W/g, "")}">
       <div class="room-head"><h2 id="room-${r.replace(/\W/g, "")}">${r}</h2><span class="faint">${ds.length} · ${lit} on</span></div><div class="tiles">${ds.map(d => tile(d))}</div></section>`; })}`
     : html`<div class="empty"><div class="empty-icon">${icon("plug", 24)}</div><h3>No devices yet</h3>
       <p>Connect Home Assistant, Home Connect or MQTT${isOwner() ? "" : " (the owner can do this in Settings)"}.</p>
       ${isOwner() ? html`<p class="mt-16"><a class="btn btn-primary" href="#/settings/devices">Connect devices</a></p>` : ""}</div>`);
+  packRooms(list);
   revealOnce(list, ".tile");
   paintBars(list);
   wireTiles(list);
 }
+/* Rooms share one column grid (CSS subgrid): each room spans as many columns as it has
+   devices, up to the row, and small rooms pack in beside big ones, so wide screens fill. */
+function packRooms(list) {
+  if (!list || !list.classList.contains("rooms")) return;
+  list.style.gridTemplateColumns = "";
+  const cs = getComputedStyle(list);
+  if (cs.display !== "grid") return;
+  let cols = cs.gridTemplateColumns.split(" ").filter(Boolean).length || 1;
+  // rooms mostly have 2 or 4 devices: an even column count packs them without orphans
+  if (cols > 2 && cols % 2) { cols -= 1; list.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`; }
+  $$(".room", list).forEach(r => r.style.setProperty("--span", Math.min(+r.dataset.n || 1, cols)));
+}
+window.addEventListener("resize", () => { clearTimeout(S.packT); S.packT = setTimeout(() => packRooms($("#dev-list")), 120); });
 function statusDefault(d, p) {
   const st = d.status || {};
   const map = { temperature: "target", brightness: "brightness", volume: "volume", position: "position", humidity: "target",
@@ -1188,6 +1259,7 @@ function choreRow(i, compact) {
         ${i.auto ? html`<span class="verified" title="${i.auto}">${icon("link", 14, 2)}Auto-checks</span>` : ""}
       </div></div>
     ${isAdult() && i.state === "open" && !compact ? html`<div class="row-end"><button class="btn btn-sm btn-quiet" type="button" data-reassign="${i.id}" aria-label="Reassign ${i.chore}">${icon("swap", 18)}<span class="hide-phone">Reassign</span></button></div>` : ""}
+    ${i.state === "pending_approval" && i.can_undo ? html`<div class="row-end">${undoBtn(i)}</div>` : ""}
   </li>`;
 }
 function doneRow(i) {
@@ -1197,7 +1269,28 @@ function doneRow(i) {
       <span class="who-tag">${who ? avatar(who, "sm") : ""}${i.done_by || i.who || "Someone"}</span><span>${i.done}</span>
       ${i.verified ? html`<span class="verified">${icon("check", 14, 2.4)}Verified by the ${cap(i.verified_by.split(".")[0]).toLowerCase()}</span>` : ""}
       ${i.state === "pending_approval" ? html`<span class="pill warn">Waiting for a parent</span>` : ""}</div></div>
-    <span class="pill ok num">+${i.points}</span></li>`;
+    <div class="row-end">${i.can_undo ? undoBtn(i) : ""}<span class="pill ok num">+${i.points}</span></div></li>`;
+}
+const undoBtn = i => html`<button class="btn btn-sm btn-quiet" type="button" data-undo="${i.id}" aria-label="Undo: ${i.chore} is not done">${icon("undo", 18)}<span class="hide-phone">Undo</span></button>`;
+async function undoDone(iid, name) {
+  try {
+    const r = await api(`/api/chores/${iid}/undo`, {});
+    const back = r.points && r.credited ? `. ${plural(r.points, "point")} taken back from ${r.credited}` : "";
+    toast(`${name || r.chore} is open again${back}.`);
+  } catch (e) { toast(e.message, true); }
+  refresh(true);
+}
+function confirmUndo(i) {
+  const other = i.done_by && i.done_by !== S.me.name;
+  if (!other) { undoDone(i.id, i.chore); return; }
+  openSheet((sh, id, close) => {
+    put(sh, html`${sheetHead(id, "undo", "Undo this?", i.chore)}
+      <p class="lead">${i.done_by} marked it done ${i.done || ""}. Undoing opens it again and takes back ${plural(i.points, "point")}${i.verified ? html`, even though the ${cap(i.verified_by.split(".")[0]).toLowerCase()} checked it off` : ""}. It shows in Activity.</p>
+      <div class="btn-row end"><button class="btn btn-quiet" type="button" data-no>Keep it done</button><button class="btn btn-primary no-arrow" type="button" data-yes autofocus>Undo</button></div>`);
+    $("[data-close]", sh).onclick = close;
+    $("[data-no]", sh).onclick = close;
+    $("[data-yes]", sh).onclick = () => { close(); undoDone(i.id, i.chore); };
+  }, { alert: true });
 }
 function wireChores(root) {
   $$("[data-done]", root).forEach(b => b.onclick = async () => {
@@ -1209,11 +1302,17 @@ function wireChores(root) {
       if (r.state === "done" && !reduceMotion()) {
         const f = document.createElement("span"); f.className = "pts-float"; f.textContent = `+${r.points || 1}`; row.appendChild(f);
       }
-      toast(r.note || `Nice. ${plural(r.points || 1, "point")}${r.opened && r.opened.length ? `. Next up: ${r.opened.join(", ")}` : ""}`);
+      toast(r.note || `Nice. ${plural(r.points || 1, "point")}${r.opened && r.opened.length ? `. Next up: ${r.opened.join(", ")}` : ""}`, false,
+        { label: "Undo", ms: Math.min((r.undo_s || 120) * 1000, 10000), run: () => undoDone(r.id, r.chore) });
       setTimeout(() => refresh(true), 700);
     } catch (e) { toast(e.message, true); b.disabled = false; }
   });
   $$("[data-reassign]", root).forEach(b => b.onclick = () => reassign(+b.dataset.reassign, b));
+  $$("[data-undo]", root).forEach(b => b.onclick = () => {
+    const iid = +b.dataset.undo, B = S.home.board;
+    const i = B.done.concat(B.open).find(x => x.id === iid);
+    if (i) confirmUndo(i);
+  });
 }
 function reassign(iid, anchor) {
   const inst = S.home.board.open.find(i => i.id === iid);
@@ -1336,7 +1435,7 @@ function updateApprovals() {
 /* ------------------------------------------------------------------ ACTIVITY */
 function tlItem(it) {
   const dev = it.device && S.home && S.home.devices.find(x => x.id === it.device);
-  const ic = it.kind === "chore" ? "check" : dev ? dev.icon : it.kind === "security" ? "key" : "activity";
+  const ic = it.kind === "chore" ? "check" : it.tool === "undo_chore" ? "undo" : dev ? dev.icon : it.kind === "security" ? "key" : "activity";
   const cls = it.outcome === "done" ? "ok" : ["failed", "denied", "declined"].includes(it.outcome) ? "bad" : ["attention", "queued", "waiting"].includes(it.outcome) ? "warn" : "";
   const word = { failed: "Didn't work", denied: "Not allowed", declined: "Not confirmed", queued: "Sent to a parent", waiting: "Waiting for a parent" }[it.outcome];
   return html`<li class="tl-item"><span class="tl-time">${it.time}</span><span class="tl-ico ${cls}">${icon(ic, 16, 2)}</span>

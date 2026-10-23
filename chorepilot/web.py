@@ -44,7 +44,7 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__, policy, webview
 from . import websetup as ws
 from .appliance import BackendError
-from .chores import ChoreDB, ChoreError, when
+from .chores import UNDO_WINDOW_S, ChoreDB, ChoreError, when
 
 SESSION_S = 12 * 3600
 LOCK_S = 600
@@ -607,6 +607,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True}, headers={"Set-Cookie": self._cookie("", 0)})
         if len(parts) == 4 and parts[:2] == ["api", "chores"] and parts[3] == "done":
             return self._done(p, db, int(parts[2]), body)
+        if len(parts) == 4 and parts[:2] == ["api", "chores"] and parts[3] == "undo":
+            return self._undo(p, db, int(parts[2]))
         if len(parts) == 4 and parts[:2] == ["api", "chores"] and parts[3] == "assign":
             return self._assign(p, db, int(parts[2]), body)
         if len(parts) == 4 and parts[:2] == ["api", "rotations"] and parts[3] == "week":
@@ -683,17 +685,34 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, {"ok": False, "error": "you can only mark your own chores done"})
         by = p["name"] if inst["assignee"] in (None, p["name"]) or not body.get("for_assignee") \
             else inst["assignee"]
-        res = db.complete(inst["title"], by=by, instance=iid, verified_by="dashboard")
+        res = db.complete(inst["title"], by=by, instance=iid, verified_by="dashboard",
+                          marked_by=p["name"])
         h = self._house(p, db)
         h._audit("complete_chore", {"chore": inst["title"], "person": by}, {"ok": True})
         for f in res["followups"]:
             h.notify(f"'{f['title']}' is now open for {f['assignee'] or 'anyone'}.",
                      log=lambda m: None)
-        out = {"ok": True, "state": res["instance"]["state"], "points": inst["points"],
-               "opened": [f["title"] for f in res["followups"]]}
+        out = {"ok": True, "id": iid, "chore": inst["title"], "state": res["instance"]["state"],
+               "points": inst["points"], "opened": [f["title"] for f in res["followups"]],
+               "undo_s": UNDO_WINDOW_S}
         if res["approval"]:
             out["note"] = "Sent to a parent to check"
         return self._send(200, out)
+
+    def _undo(self, p, db, iid):
+        """Undo a "done": an adult any time, anyone else only their own mark, for a short while."""
+        try:
+            res = db.undo_complete(iid, p["name"])
+        except ChoreError as e:
+            inst = db.instance(iid)
+            code = 404 if not inst or inst["state"] not in ("done", "approved",
+                                                            "pending_approval") else 403
+            self._house(p, db)._audit("undo_chore", {"instance": iid},
+                                      {"ok": False, "error": str(e), "policy": "deny"})
+            return self._send(code, {"ok": False, "error": str(e)})
+        self._house(p, db)._audit("undo_chore", {"chore": res["chore"], "person": res["credited"],
+                                                 "points": res["points"]}, {"ok": True})
+        return self._send(200, {"ok": True, **res})
 
     def _assign(self, p, db, iid, body):
         if p["role"] not in ("owner", "adult", "staff"):

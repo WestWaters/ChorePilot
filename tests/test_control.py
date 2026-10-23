@@ -159,8 +159,10 @@ class TestBridgePolicy(unittest.TestCase):
                              path=os.path.join(self.tmp, "rl.json"))
         b = bridge(sim(self.tmp), limiter=lim)
         self.assertTrue(b.call("start_program", {"program": "eco"})["ok"])
+        self.assertTrue(b.call("cancel")["ok"])                  # tier 1: its own budget
+        self.assertTrue(b.call("start_program", {"program": "eco"})["ok"])
         self.assertTrue(b.call("cancel")["ok"])
-        r = b.call("start_program", {"program": "eco"})
+        r = b.call("start_program", {"program": "eco"})          # the third water/heat write
         self.assertIn("rate limit", r["error"])
         gap = ct.RateLimiter(min_start_gap_s=60)
         self.assertIsNone(gap.check("start_program", now=1000))

@@ -359,8 +359,8 @@ event stream instead, with a slow safety poll.
 - **Rate limits.**
   - Home Connect allows 1000 requests a day, 50 a minute and 5 program starts a minute
     ([rate limiting](https://api-docs.home-connect.com/general/#rate-limiting)).
-  - ChorePilot's own limit is 6 writes per 10 min, with 60 s between starts of the *same*
-    appliance.
+  - ChorePilot's own limit is 6 starts per 10 min across the house, with 60 s between starts
+    of the *same* appliance ([CONTROL.md, rate limits](CONTROL.md#31-rate-limits)).
   - Watchers poll rarely while the end is far off (at most every 10 min, then every 30 s
     near the end). A 3 h wash plus the hand-off costs a few hundred requests.
 - **Secrets** live only in the environment or in `~/.config/chorepilot` (0600). The model

@@ -787,3 +787,88 @@ button.lb-row:hover { background: var(--panel-2); }
 .field .seg { justify-self: start; }
 .btn-primary:has(svg)::after { display: none; }
 .opt > div { min-width: 0; }
+
+/* ---------------------------------------------------------------- 0.7.1 */
+/* device grid: rooms share one column grid and pack side by side, so wide screens fill */
+@media (min-width: 700px) { .tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); } }
+.rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 12px; grid-auto-flow: row dense; align-items: start; }
+.rooms .room { grid-column: span var(--span, 1); display: grid; grid-template-columns: subgrid; min-width: 0; }
+.rooms .room-head, .rooms .tiles { grid-column: 1 / -1; }
+.rooms .tiles { grid-template-columns: subgrid; }
+@media (min-width: 1100px) { .rooms { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); } }
+@supports not (grid-template-columns: subgrid) {
+  .rooms { display: block; }
+  .rooms .tiles { grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
+}
+
+/* the palette trigger in the top bar */
+.ask-open { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 10px; border: 1px solid #2c2c2c; border-radius: var(--r-1);
+  background: #0d0d0d; color: #cfcfcf; font-size: 13px; font-weight: 500; white-space: nowrap; transition: border-color var(--fast), color var(--fast); }
+.ask-open:hover { border-color: #4a4a4a; color: #fff; }
+.ask-open svg { color: #c8f031; }
+.ask-open kbd, .console-head kbd { font-family: var(--mono); font-size: 11px; line-height: 18px; padding: 0 5px; border: 1px solid #333; border-radius: var(--r-1); color: #8f8f8f; background: #000; }
+@media (max-width: 1100px) { .ask-open .ask-open-l { display: none; } }
+@media (max-width: 699px) {
+  .ask-open { width: 44px; height: 44px; padding: 0; justify-content: center; border-color: transparent; background: none; }
+  .ask-open kbd { display: none; }
+  .ask-open svg { width: 22px; height: 22px; }
+  .topnav-actions { gap: 2px; }
+}
+@media (max-width: 420px) {
+  /* room for the palette button: the AI status keeps its dot, the label moves to the tooltip */
+  .sys-pill { width: 32px; padding: 0; justify-content: center; }
+  .sys-pill > span:not(.live-dot) { display: none; }
+}
+
+/* the palette: the same console, as a sheet over any view */
+.sheet.palette { padding: 0; width: min(760px, 100%); overflow: auto; }
+.sheet.palette .console-head { position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 10px 10px 10px 20px; }
+.sheet.palette .console-head .icon-btn { margin-left: 4px; color: var(--text-2); }
+.sheet.palette .console-head .icon-btn:hover { color: var(--text); background: var(--panel-2); }
+.sheet.palette .ask { border-bottom: 1px solid var(--line); }
+.sheet.palette .ask-suggest { padding-top: 14px; }
+.sheet.palette .ask-hint { border-top: 1px solid var(--line); }
+.sheet.palette .convo .turn:first-child { border-top: 0; }
+.sheet.palette .ask-suggest:empty { display: none; }
+.sheet-scrim.palette-scrim { place-items: start center; padding-top: 12vh; }
+@media (max-width: 699px) {
+  .sheet-scrim.palette-scrim { place-items: end stretch; padding-top: 0; }
+  .sheet.palette { padding: 0 0 var(--safe-b); max-height: 88vh; }
+  .sheet.palette .sheet-grab { margin: 8px auto 4px; }
+  .sheet.palette .console-head { position: static; padding-left: 16px; }
+}
+
+/* toasts can carry one action (Undo) */
+.toast-msg { flex: 1; min-width: 0; }
+.toast-act { flex: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-1); background: none; color: var(--accent-text);
+  font-weight: 700; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.toast-act:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* phone home: a compact hero, so Ask the house sits above the fold and clear of the dock */
+@media (max-width: 699px) {
+  .hero-inner { padding-top: 20px; }
+  .hero h1 { font-size: 28px; line-height: 1.1; margin-top: 10px; }
+  .now { margin-top: 12px; font-size: 14px; gap: 4px 14px; }
+  .kpis { margin-top: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi { padding: 12px 12px 12px 0; }
+  .kpi + .kpi { padding-left: 12px; }
+  .kpi:nth-child(3) { padding-left: 0; }
+  .kpi .eyebrow { font-size: 10px; letter-spacing: .12em; }
+  .kpi-v { font-size: 28px; margin-top: 6px; gap: 4px; }
+  .kpi-v small { font-size: 13px; }
+  .kpi-c { margin-top: 4px; font-size: 12px; }
+  .kpi-bar { margin-top: 8px; height: 2px; }
+  .run { padding: 10px 0; }
+  .console { margin-top: 20px; }
+  .ask.dock { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  /* everything the docked bar and the tab bar cover stays reachable */
+  html.composer { scroll-padding-bottom: calc(150px + var(--safe-b)); }
+  html.composer .toasts { bottom: calc(134px + var(--safe-b)); }
+}
+/* the device grid uses the whole screen on wide desktops */
+.wrap.wrap-wide { max-width: 1920px; }
+.sheet.palette::before { z-index: 3; }
+.console-head .eyebrow { white-space: nowrap; }
+.console-head .model { min-width: 0; }
+@media (max-width: 699px) { .console-head { padding-left: 16px; padding-right: 16px; } .console-head .model { font-size: 11px; } }
+@media (max-width: 699px) { .rooms { display: block; } .rooms .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

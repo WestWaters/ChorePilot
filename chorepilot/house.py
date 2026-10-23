@@ -108,7 +108,9 @@ class House:
         self.strong_fn = strong_confirm or tty_strong_confirm
         self.secret_fn = ask_secret or tty_secret
         self.policy = self.cfg.get("policy") or {}
-        self.limiter = limiter or RateLimiter(path=os.path.join(cache_dir(), "control-ratelimit.json"))
+        self.limiter = limiter or RateLimiter(path=os.path.join(cache_dir(), "control-ratelimit.json"),
+                                              limits=self.cfg.get("rate_limits"))
+        self.agent = source in policy.EXTERNAL     # MCP / external agents: stricter tier-1 limits
         self.snapshot = snapshot or Snapshot()
         self.audit_path = audit_path or os.path.join(config_dir(), "audit.log")
         self.person = self._who(person)
@@ -141,7 +143,8 @@ class House:
                 sp = lambda msg, nick: spawn_watcher(nick, msg, None)  # noqa: E731
                 ch = lambda cid: spawn_chain(cid, None)  # noqa: E731
             self.bridge = Bridge(fleet, confirm="heat", dry_run=dry_run, ask=self._bridge_ask,
-                                 limiter=self.limiter, log=log, watch_spawner=sp, chain_spawner=ch)
+                                 limiter=self.limiter.for_caller(self.agent), log=log,
+                                 watch_spawner=sp, chain_spawner=ch)
         self.notifier = notifier or Notifier(self.bridge.backend if self.bridge else None)
         self._last_status = {}
 
@@ -453,7 +456,7 @@ class House:
         if self.dry_run:
             return {"ok": True, "dry_run": True, "would_send": _redact(ops), "tier": tier,
                     "policy": dec.outcome, "note": "dry run: nothing was sent"}
-        why = self.limiter.check("start_program" if tier >= 2 else "pause", key=d.nick)
+        why = self.limiter.check(action, key=d.nick, tier=tier, agent=self.agent)
         if why:
             return {"ok": False, "error": why, "tier": tier}
         q = dt.confirmation(action, params, d.nick)
@@ -469,7 +472,7 @@ class House:
                 return {"ok": False, "declined": True, "policy": "second_factor", "tier": tier,
                         "error": why}
         d.adapter.apply(ops)
-        self.limiter.record("start_program" if tier >= 2 else "pause", key=d.nick)
+        self.limiter.record(action, key=d.nick, tier=tier, agent=self.agent)
         after = d.adapter.status()
         for ev in dt.events(st, after):
             if ev == "started":
@@ -523,7 +526,7 @@ class House:
                 return {"ok": False, "error": "you can only mark your own chores done",
                         "policy": "deny"}
             db.materialise()
-            res = db.complete(args["chore"], by=who["name"])
+            res = db.complete(args["chore"], by=who["name"], marked_by=self.me or who["name"])
             inst = res["instance"]
             out = {"ok": True, "chore": inst["title"], "done_by": inst["done_by"],
                    "state": inst["state"]}

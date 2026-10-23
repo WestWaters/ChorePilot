@@ -5,6 +5,7 @@
       "backend": "simulated",          # default adapter: simulated | ha | matter | mqtt | homeconnect
       "ha": {"url": "http://homeassistant.local:8123"},      # shared sections (token: $HA_TOKEN)
       "policy": {"kids_tier1": true},                        # see policy.py
+      "rate_limits": {"tier1": {"per_device": {"max": 30, "window_s": 60}}},  # docs/CONTROL.md
       "devices": {
         "dishwasher": {"type": "dishwasher", "model": "SMV6ZCX42E"},
         "thermostat": {"type": "climate", "backend": "ha", "entity": "climate.hallway",

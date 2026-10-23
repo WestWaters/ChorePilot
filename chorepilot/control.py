@@ -18,12 +18,14 @@ appliance it can be left out.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import uuid
@@ -245,51 +247,177 @@ def validate_args(name, args, fleet=None):
 
 
 # ------------------------------------------------------------------ policy
-class RateLimiter:
-    """At most `max_actions` writes per `window_s`, and `min_start_gap_s` between starts of
-    the same appliance. Persisted to a small JSON file so separate CLI runs share the budget."""
+RATE_LIMITS = {
+    # tier 1 (lights, blinds, speakers, vacuum, pause/cancel): generous, per device, so tapping
+    # a light on the dashboard never gets blocked; it only stops a runaway loop
+    "tier1": {"per_device": {"max": 30, "window_s": 60}},
+    # tier 2 (water / heat) and tier 3 (security): strict and house-wide, plus a gap between
+    # starts of the same device
+    "tier2": {"house": {"max": 6, "window_s": 600}, "start_gap_s": 60},
+    "tier3": {"house": {"max": 6, "window_s": 600}, "start_gap_s": 60},
+    # MCP / external agents: stricter tier-1 limits than a person at the dashboard
+    "agent": {"tier1": {"per_device": {"max": 6, "window_s": 60},
+                        "house": {"max": 30, "window_s": 600}}},
+}
+_RL_LOCK = threading.Lock()
 
-    def __init__(self, max_actions=6, window_s=600, min_start_gap_s=60, path=None):
-        self.max_actions, self.window_s, self.min_gap = max_actions, window_s, min_start_gap_s
+
+def _merge(base, over):
+    out = copy.deepcopy(base)
+    for k, v in (over or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _span(s):
+    s = int(s)
+    if s == 60:
+        return "minute"
+    if s % 60 == 0:
+        return f"{s // 60} min"
+    return f"{s} s"
+
+
+class RateLimiter:
+    """Write limits per safety tier, persisted to a small JSON file so separate CLI runs and
+    dashboard requests share the budget.
+
+    Each tier can have a `per_device` and a `house` limit ({"max": n, "window_s": s}, or null
+    for none) and a `start_gap_s` between starts of the same device. Tier 1 is counted per kind
+    of caller (people vs MCP / external agents, whose limits come from "agent"), so a runaway
+    agent can never use up the dashboard's budget. Tiers 2 and 3 are counted across everyone.
+    house.json "rate_limits" overrides any of it (see docs/CONTROL.md).
+
+    max_actions / window_s / min_start_gap_s set the tier 2 and tier 3 limits (the 0.7 API)."""
+
+    def __init__(self, max_actions=6, window_s=600, min_start_gap_s=60, path=None, limits=None):
+        base = _merge(RATE_LIMITS, {t: {"house": {"max": max_actions, "window_s": window_s},
+                                        "start_gap_s": min_start_gap_s} for t in ("tier2", "tier3")})
+        self.limits = _merge(base, limits if isinstance(limits, dict) else None)
         self.path = path
+        self._mem = {"w": [], "last_start": 0, "last_start_by": {}}
+
+    @staticmethod
+    def tier_of(action):
+        return 2 if action in HEAT_ACTIONS else 1
+
+    def rules(self, tier, agent=False):
+        t = f"tier{min(max(int(tier), 1), 3)}"
+        r = dict(self.limits.get(t) or {})
+        if agent:
+            r.update((self.limits.get("agent") or {}).get(t) or {})
+        return r
+
+    @staticmethod
+    def _rule(r, key):
+        v = r.get(key)
+        if not isinstance(v, dict):
+            return None
+        try:
+            n, w = int(v.get("max")), float(v.get("window_s"))
+        except (TypeError, ValueError):
+            return None
+        return (n, w) if n >= 1 and w > 0 else None
 
     def _load(self):
         if not self.path:
-            return getattr(self, "_mem", {"writes": [], "last_start": 0})
+            return self._mem
         try:
             with open(self.path) as f:
-                return json.load(f)
+                st = json.load(f)
         except (OSError, ValueError):
-            return {"writes": [], "last_start": 0}
+            st = {}
+        if not isinstance(st, dict):
+            st = {}
+        st.setdefault("w", [])
+        st.setdefault("last_start", 0)
+        st.setdefault("last_start_by", {})
+        return st
 
     def _save(self, st):
         if not self.path:
             self._mem = st
             return
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, "w") as f:
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as f:
             json.dump(st, f)
+        os.replace(tmp, self.path)
 
-    def check(self, action, now=None, key=None):
+    def _horizon(self):
+        spans = [3600.0]
+        for t in ("tier1", "tier2", "tier3"):
+            for agent in (False, True):
+                r = self.rules(int(t[-1]), agent)
+                spans += [x[1] for x in (self._rule(r, "per_device"), self._rule(r, "house")) if x]
+        return max(spans)
+
+    def check(self, action, now=None, key=None, tier=None, agent=False):
         now = now or time.time()
-        st = self._load()
-        recent = [t for t in st["writes"] if now - t < self.window_s]
-        if len(recent) >= self.max_actions:
-            return f"rate limit: {self.max_actions} actions per {self.window_s // 60} min"
-        last = st.get("last_start_by", {}).get(key, 0) if key else st.get("last_start", 0)
-        if action in HEAT_ACTIONS and now - last < self.min_gap:
-            return f"rate limit: wait {int(self.min_gap - (now - last))} s between starts"
+        tier = self.tier_of(action) if tier is None else max(1, min(int(tier), 3))
+        r = self.rules(tier, agent)
+        with _RL_LOCK:
+            st = self._load()
+        mine = [w for w in st["w"] if w[1] == tier and (tier >= 2 or bool(w[3]) == bool(agent))]
+        dev = self._rule(r, "per_device")
+        if dev and key is not None:
+            n, win = dev
+            if sum(1 for w in mine if w[2] == key and now - w[0] < win) >= n:
+                return f"rate limit: {n} actions per {_span(win)} on the {str(key).replace('_', ' ')}"
+        house = self._rule(r, "house")
+        if house:
+            n, win = house
+            if sum(1 for w in mine if now - w[0] < win) >= n:
+                what = "actions" if tier == 1 else "water / heat actions" if tier == 2 \
+                    else "security actions"
+                return f"rate limit: {n} {what} per {_span(win)}"
+        gap = float(r.get("start_gap_s") or 0)
+        if tier >= 2 and gap > 0:
+            last = st["last_start_by"].get(key, 0) if key else st.get("last_start", 0)
+            if now - last < gap:
+                return f"rate limit: wait {int(gap - (now - last)) or 1} s between starts"
         return None
 
-    def record(self, action, now=None, key=None):
+    def record(self, action, now=None, key=None, tier=None, agent=False):
         now = now or time.time()
-        st = self._load()
-        st["writes"] = [t for t in st["writes"] if now - t < self.window_s] + [now]
-        if action in HEAT_ACTIONS:
-            st["last_start"] = now
-            if key:
-                st.setdefault("last_start_by", {})[key] = now
-        self._save(st)
+        tier = self.tier_of(action) if tier is None else max(1, min(int(tier), 3))
+        with _RL_LOCK:
+            st = self._load()
+            keep = self._horizon()
+            st["w"] = [w for w in st["w"] if isinstance(w, list) and len(w) == 4
+                       and now - w[0] < keep] + [[now, tier, key, 1 if agent else 0]]
+            if tier >= 2:
+                st["last_start"] = now
+                if key:
+                    st["last_start_by"][key] = now
+            st.pop("writes", None)                     # the 0.7 file format
+            self._save(st)
+
+    def for_caller(self, agent=False):
+        """A view that passes `agent` on every call (for the Bridge, which doesn't know who
+        is asking)."""
+        return _CallerLimiter(self, agent)
+
+
+class _CallerLimiter:
+    def __init__(self, base, agent):
+        self.base, self.agent = base, agent
+
+    @property
+    def path(self):
+        return self.base.path
+
+    def check(self, action, now=None, key=None, tier=None, agent=None):
+        return self.base.check(action, now, key, tier, self.agent if agent is None else agent)
+
+    def record(self, action, now=None, key=None, tier=None, agent=None):
+        return self.base.record(action, now, key, tier, self.agent if agent is None else agent)
+
+    def for_caller(self, agent=False):
+        return self.base.for_caller(agent)
 
 
 def tty_confirm(question):

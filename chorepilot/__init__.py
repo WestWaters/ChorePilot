@@ -2,4 +2,4 @@
 
 It started in a dishwasher, as Dishsoaker3000.
 """
-__version__ = "0.7.0"
+__version__ = "0.7.1"

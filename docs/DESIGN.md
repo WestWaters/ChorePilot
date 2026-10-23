@@ -425,3 +425,26 @@ only 'self'. Motion is CSS keyframes plus a small requestAnimationFrame count-up
 prefers-reduced-motion. `GET /api/system` feeds the Local AI panel and the status pill in the top
 bar; it never blocks (0.8 s per probe, cached 3 s) and shows a dash for anything a server doesn't
 expose.
+
+### 0.7.1: polish
+
+- **Ask the house from anywhere.** The console is one component (`consoleHtml` /
+  `wireConsole` / `updateConsole` in `app.js`), shown inline on Home and as a palette sheet on
+  every view: the top bar button or Cmd/Ctrl+K. Both share one conversation and the same
+  `/api/ask` job, confirm cards and policy; nothing changed on the server.
+- **Phone home.** The four readouts are a compact 2x2 grid (28 px numerals) so Ask the house
+  sits above the fold. While the input is docked above the tab bar, the page reserves that space
+  (bottom padding, `scroll-padding-bottom`, toasts lifted), including the safe-area insets.
+- **Device grid.** Rooms share one column grid (CSS subgrid, `auto-fill` of 240-260 px
+  columns): each room spans as many columns as it has devices, up to the row, and smaller rooms
+  pack in beside bigger ones, so a wide screen fills instead of leaving a column empty. The
+  Devices page may use up to 1920 px.
+- **Undo a "done".** `ChoreDB.complete` records who pressed done and what the completion opened
+  (`chore_done` event under `chore:<id>`, kept out of the event feed). `undo_complete` reopens the
+  instance (or removes an ad-hoc one), so points and streaks, which are derived from completed
+  instances, go back; it cancels a pending parent approval, removes follow-ups nobody has touched
+  and steps their rotation back. An owner or adult may undo any completion; anyone else only
+  their own, for `UNDO_WINDOW_S` (2 min). `POST /api/chores/<id>/undo`, audited as `undo_chore`.
+- **Rate limits per tier** (`control.RateLimiter`): tier 1 per device and generous, with a
+  stricter budget of its own for MCP / external callers; tiers 2 and 3 house-wide with a gap
+  between starts. `house.json` `"rate_limits"`; see [CONTROL.md](CONTROL.md#31-rate-limits).

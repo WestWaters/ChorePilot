@@ -1,6 +1,6 @@
 name: chorepilot
 label: ChorePilot
-version: 0.7.0
+version: 0.7.1
 manifest_version: 2
 api_version: 1
 license: Apache-2.0

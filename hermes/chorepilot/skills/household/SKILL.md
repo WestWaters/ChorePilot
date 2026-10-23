@@ -1,7 +1,7 @@
 ---
 name: household
 description: "Run the house and the chore board through ChorePilot: device status, lights, climate, vacuum, blinds, appliances, chores. Use when the user asks about home devices or household chores."
-version: 0.7.0
+version: 0.7.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

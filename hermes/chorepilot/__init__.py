@@ -28,7 +28,7 @@ from .client import DEFAULT_TIMEOUT, DEFAULT_URL, ChorePilotError, Client
 logger = logging.getLogger(__name__)
 
 TOOLSET = "chorepilot"
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 RULES = ("ChorePilot decides what is allowed from the token's person, not from you: reads and "
          "tier-1 actions run; water/heat actions (dishwasher, washer, sprinkler, coffee, oven) wait "
          "for that person to confirm on their own phone (Telegram or the ChorePilot dashboard), and "

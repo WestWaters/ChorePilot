@@ -25,6 +25,8 @@ from . import schedule as sch
 ROLES = ("owner", "adult", "kid", "guest", "staff")
 STRATEGIES = ("round_robin", "least_points", "fixed", "random", "claimable")
 DONE = ("done", "approved")
+MARKED = ("done", "approved", "pending_approval")
+UNDO_WINDOW_S = 120          # whoever marked a chore done can undo it this long; adults any time
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS people(
@@ -596,9 +598,12 @@ class ChoreDB:
                 n += 1
         return n
 
-    def complete(self, chore, by=None, verified_by="self_report", note=None, instance=None):
+    def complete(self, chore, by=None, verified_by="self_report", note=None, instance=None,
+                 marked_by=None):
         """Mark the chore done. Prefers `by`'s own open instance; opens an ad-hoc one if there
-        is none. A kid completing a needs_approval chore by self-report -> pending approval."""
+        is none. A kid completing a needs_approval chore by self-report -> pending approval.
+        `marked_by` is who pressed "done" (defaults to `by` for a self-report); it is kept,
+        with what the completion opened, so `undo_complete` can put everything back."""
         c = self.chore(chore)
         who = self.person(by, required=False) if by is not None else None
         inst = self.instance(instance) if instance else None
@@ -606,6 +611,7 @@ class ChoreDB:
             open_ = self.instances("open", chore=c["id"])
             mine = [i for i in open_ if who and i["assignee_id"] == who["id"]]
             inst = (mine or open_ or [None])[0]
+        created = inst is None
         if inst is None:
             owner = self.week_assignee(c) if c["rotate"] == "week" else who
             inst = self.open_instance(c, assignee=owner or who, note="done without being scheduled")
@@ -618,15 +624,21 @@ class ChoreDB:
                 (state, self.now(), credit, verified_by, note, inst["id"]))
         self._x("UPDATE chores SET last_done=? WHERE id=?", (self.now(), c["id"]))
         out = {"instance": self.instance(inst["id"]), "followups": [], "approval": None}
+        if marked_by is None and not verified_by.startswith("device") and who:
+            marked_by = who["name"]
+        track = []
         if pending:
             out["approval"] = self.add_approval(
                 "chore", who, {"instance": inst["id"]},
                 f"{who['name']} says '{c['title']}' is done")
-            return out
-        out["followups"] = self.open_followups(c)
+        else:
+            out["followups"] = self.open_followups(c, track=track)
+        self.record_event(f"chore:{inst['id']}", "chore_done", "chore", actor=marked_by,
+                          data={"created": created, "followups": track,
+                                "verified_by": verified_by})
         return out
 
-    def open_followups(self, chore):
+    def open_followups(self, chore, track=None):
         opened = []
         for title in self.chore(chore)["followups"]:
             try:
@@ -635,8 +647,90 @@ class ChoreDB:
                 continue
             if self.instances("open", chore=f["id"]):
                 continue                         # don't stack "empty the dishwasher" twice
-            opened.append(self.open_instance(f))
+            inst = self.open_instance(f)
+            opened.append(inst)
+            if track is not None:
+                track.append({"instance": inst["id"], "chore": f["id"], "rot_from": f["rot_idx"],
+                              "rot_to": self.chore(f["id"])["rot_idx"]})
         return opened
+
+    # ================================================================ undo a "done"
+    def done_marks(self, iids):
+        """{instance id: {"by": name or None, "at": ts}} for the latest "done" of each."""
+        iids = [int(i) for i in iids]
+        if not iids:
+            return {}
+        devs = [f"chore:{i}" for i in iids]
+        rows = self.db.execute(
+            "SELECT e.device, e.at, p.name AS by_name FROM events e LEFT JOIN people p ON "
+            f"p.id=e.actor_id WHERE e.event='chore_done' AND e.device IN ({','.join('?' * len(devs))}) "
+            "ORDER BY e.at, e.id", devs).fetchall()
+        return {int(r["device"][6:]): {"by": r["by_name"], "at": r["at"]} for r in rows}
+
+    def _done_events(self, iid, since):
+        return [dict(r, data=json.loads(r["data"]) if r["data"] else {}) for r in self.db.execute(
+            "SELECT * FROM events WHERE device=? AND event IN ('chore_done','chore_followups') "
+            "AND at>=? ORDER BY at, id", (f"chore:{int(iid)}", since))]
+
+    def can_undo(self, inst, person, now=None, window=UNDO_WINDOW_S):
+        """(True, None) or (False, why). An owner or adult can undo any completion; anyone else
+        only one they marked themselves, within `window` seconds."""
+        if not inst or inst["state"] not in MARKED:
+            return False, "that chore isn't marked done"
+        p = self.person(person, required=False) if not isinstance(person, dict) else person
+        if not p:
+            return False, "who is asking?"
+        if p["role"] in ("owner", "adult"):
+            return True, None
+        mark = self.done_marks([inst["id"]]).get(inst["id"])
+        if not mark or (mark["by"] or "").lower() != p["name"].lower():
+            return False, "only an adult can undo someone else's 'done'"
+        if (now or self.now()) - mark["at"] > window:
+            return False, (f"it's been more than {max(1, round(window / 60))} min; "
+                           "ask an adult to undo it")
+        return True, None
+
+    def undo_complete(self, iid, by, now=None, window=UNDO_WINDOW_S):
+        """Put a completed chore back the way it was: the instance reopens (an ad-hoc one made
+        by the completion is removed), so its points and the streak it fed are gone; a pending
+        parent approval is cancelled; follow-ups it opened that nobody has touched are removed
+        and their rotation steps back. Raises ChoreError when `by` may not undo it."""
+        inst = self.instance(iid)
+        ok, why = self.can_undo(inst, by, now, window)
+        if not ok:
+            raise ChoreError(why)
+        undoer = self.person(by) if not isinstance(by, dict) else by
+        evs = self._done_events(iid, (inst["completed_at"] or 0) - 1)
+        done_ev = next((e for e in reversed(evs) if e["event"] == "chore_done"), None)
+        removed = []
+        for e in evs:
+            for f in e["data"].get("followups") or []:
+                fi = self.instance(f["instance"])
+                if not fi or fi["state"] != "open" or fi["completed_at"]:
+                    continue                         # someone already did it: leave it
+                self._x("DELETE FROM instances WHERE id=?", (fi["id"],))
+                removed.append(fi["title"])
+                if f.get("rot_to") != f.get("rot_from"):
+                    self._x("UPDATE chores SET rot_idx=? WHERE id=? AND rot_idx=?",
+                            (f["rot_from"], f["chore"], f["rot_to"]))
+        for a in self.approvals("pending"):
+            if a["kind"] == "chore" and a["payload"].get("instance") == inst["id"]:
+                self._x("UPDATE approvals SET state='cancelled', decided_by=?, decided_at=? "
+                        "WHERE id=?", (undoer["id"], self.now(), a["id"]))
+        created = bool(done_ev and done_ev["data"].get("created"))
+        if created:
+            self._x("DELETE FROM instances WHERE id=?", (inst["id"],))
+        else:
+            self._x("UPDATE instances SET state='open', completed_at=NULL, completed_by=NULL, "
+                    "verified_by=NULL WHERE id=?", (inst["id"],))
+        self._x("UPDATE chores SET last_done=(SELECT MAX(completed_at) FROM instances WHERE "
+                "chore_id=? AND state IN ('done','approved','pending_approval')) WHERE id=?",
+                (inst["chore_id"], inst["chore_id"]))
+        self.record_event(f"chore:{inst['id']}", "chore_undone", "chore", actor=undoer["name"],
+                          data={"was": inst["state"], "credited": inst["done_by"]})
+        return {"chore": inst["title"], "instance": inst["id"], "was": inst["state"],
+                "credited": inst["done_by"], "points": inst["points"], "reopened": not created,
+                "removed_followups": removed}
 
     def who_has(self, chore, at=None):
         c = self.chore(chore)
@@ -707,9 +801,11 @@ class ChoreDB:
         return lines
 
     def events(self, limit=20):
+        """Device and security events, newest first (the bookkeeping that lets a chore's "done"
+        be undone lives in the same table under "chore:<id>" and is left out)."""
         return [dict(r) for r in self.db.execute(
             "SELECT e.*, p.name AS actor FROM events e LEFT JOIN people p ON p.id=e.actor_id "
-            "ORDER BY e.at DESC, e.id DESC LIMIT ?", (limit,))]
+            "WHERE e.device NOT LIKE 'chore:%' ORDER BY e.at DESC, e.id DESC LIMIT ?", (limit,))]
 
     # ================================================================ approvals
     def add_approval(self, kind, person, payload, summary):
@@ -748,7 +844,10 @@ class ChoreDB:
                     ("approved" if approve else "open", iid))
             if approve:
                 inst = self.instance(iid)
-                self.open_followups(inst["chore_id"])
+                track = []
+                self.open_followups(inst["chore_id"], track=track)
+                self.record_event(f"chore:{iid}", "chore_followups", "chore", actor=p["name"],
+                                  data={"followups": track})
         return self.approval(aid)
 
     def set_result(self, aid, result):
