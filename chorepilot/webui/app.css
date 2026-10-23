@@ -786,3 +786,4 @@ button.lb-row:hover { background: var(--panel-2); }
 .hero-inner { position: relative; }
 .field .seg { justify-self: start; }
 .btn-primary:has(svg)::after { display: none; }
+.opt > div { min-width: 0; }
