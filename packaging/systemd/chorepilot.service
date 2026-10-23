@@ -1,0 +1,17 @@
+# systemd user unit for `chorepilot run`. `chorepilot service install` writes this with the
+# right path for you; by hand: copy to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now chorepilot
+#   loginctl enable-linger $USER     # keep it running without a login session (headless box)
+[Unit]
+Description=ChorePilot, your smart-home AI agent assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/chorepilot run
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

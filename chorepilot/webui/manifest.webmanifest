@@ -1,0 +1,23 @@
+{
+  "name": "ChorePilot",
+  "short_name": "ChorePilot",
+  "description": "Your home, your chores, your assistant. Runs on your own computer.",
+  "id": "/",
+  "start_url": "/#/home",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050505",
+  "theme_color": "#000000",
+  "icons": [
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Devices", "url": "/#/devices"},
+    {"name": "Chores", "url": "/#/chores"},
+    {"name": "Approvals", "url": "/#/approvals"}
+  ]
+}

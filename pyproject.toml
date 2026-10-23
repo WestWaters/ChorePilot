@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chorepilot"
+version = "0.7.0"
+description = "ChorePilot, your smart-home AI agent assistant: local-first, runs your appliances and keeps the household's chores fair."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+dependencies = []  # stdlib only: it has to install on a Pi Zero
+keywords = ["smart home", "home assistant", "home connect", "chores", "llm", "local llm",
+            "mcp", "telegram bot", "household", "llama.cpp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+]
+
+[project.scripts]
+chorepilot = "chorepilot.cli:main"
+dishsoaker = "chorepilot.cli:main"   # the original name, kept as a fun alias
+wash = "chorepilot.cli:wash_main"    # `wash "wash my dishes"` = `chorepilot wash "wash my dishes"`
+
+[tool.setuptools]
+packages = ["chorepilot", "chorepilot.devtypes", "chorepilot.adapters"]
+
+[tool.setuptools.package-data]
+chorepilot = ["webui/*", "webui/fonts/*"]

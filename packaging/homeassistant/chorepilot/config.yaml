@@ -1,0 +1,46 @@
+# Home Assistant add-on: ChorePilot, your smart-home AI agent assistant.
+# https://developers.home-assistant.io/docs/add-ons/configuration
+name: ChorePilot
+version: "0.7.0"
+slug: chorepilot
+description: >-
+  Your smart-home AI agent assistant: local-first, runs your appliances and keeps the
+  household's chores fair. Talks to Home Assistant through the Supervisor (no token to paste).
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+init: false
+homeassistant_api: true        # SUPERVISOR_TOKEN reaches http://supervisor/core/api
+hassio_api: false
+ports:
+  8771/tcp: 8771               # the dashboard (sign in with your ChorePilot PIN)
+  8770/tcp: null               # MCP for outside agents: off unless you map it
+ports_description:
+  8771/tcp: ChorePilot dashboard
+  8770/tcp: MCP server (streamable HTTP, token required)
+options:
+  household: "Our home"
+  owner: ""
+  owner_pin: ""
+  members: []                  # e.g. ["Sam:adult", "Jordan:kid"]
+  unit: "C"
+  model_url: ""                # e.g. http://192.168.1.20:8080 (llama-server / Ollama / LM Studio)
+  model_name: ""
+  import_entities: true        # map HA lights, climate, locks, covers, ... on first start
+  telegram_token: ""
+  default_chores: true
+schema:
+  household: str
+  owner: str
+  owner_pin: password
+  members:
+    - str
+  unit: list(C|F)
+  model_url: str?
+  model_name: str?
+  import_entities: bool
+  telegram_token: password?
+  default_chores: bool

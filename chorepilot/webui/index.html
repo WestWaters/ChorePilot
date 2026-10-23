@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="ChorePilot">
+<meta name="description" content="Your home, your chores, your assistant. Local-first.">
+<title>ChorePilot</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/ibm-plex-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app.css">
+<script src="/theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div id="boot" class="boot" aria-hidden="true"><div class="boot-bar"></div></div>
+
+<!-- signed out: sign in, or create the owner on first run -->
+<section id="gate" class="gate" hidden>
+  <div class="gate-hero" aria-hidden="true">
+    <div class="gate-brand"><span class="mark"></span><span class="wordmark">ChorePilot</span></div>
+    <p class="eyebrow">Local-first home intelligence</p>
+    <p class="gate-claim">Your home.<br>Run on your own hardware.</p>
+    <dl class="gate-specs">
+      <div><dt>Cloud relay</dt><dd>None</dd></div>
+      <div><dt>Model</dt><dd>Local</dd></div>
+      <div><dt>Every action</dt><dd>Audited</dd></div>
+    </dl>
+  </div>
+  <div class="gate-side">
+    <div class="gate-card" id="gate-card"></div>
+    <p class="gate-foot">ChorePilot <span data-version></span> · runs on your own computer</p>
+  </div>
+</section>
+
+<!-- signed in -->
+<div id="shell" class="shell" hidden>
+  <header class="topnav">
+    <a class="brand" href="#/home" aria-label="ChorePilot home"><span class="mark" aria-hidden="true"></span><span class="wordmark">ChorePilot</span></a>
+    <nav class="nav" aria-label="Main"><ul class="nav-list" id="rail-nav"></ul></nav>
+    <div class="topnav-actions">
+      <a class="sys-pill" id="sys-pill" href="#/home" hidden></a>
+      <button class="icon-btn" id="bell" type="button" aria-label="Approvals"></button>
+      <button class="avatar-btn" id="top-me" type="button" aria-label="Account and settings" aria-haspopup="menu"></button>
+    </div>
+  </header>
+  <div class="topbar-title" id="topbar-title" hidden></div>
+  <main id="main" class="main" tabindex="-1"></main>
+  <nav class="tabbar" id="tabbar" aria-label="Main"></nav>
+</div>
+
+<div id="sheet-root"></div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>

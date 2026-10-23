@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+*.gguf
+runs/
+packaging/homeassistant/chorepilot/src/
+data/
+.DS_Store

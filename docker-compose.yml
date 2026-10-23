@@ -1,0 +1,30 @@
+# ChorePilot next to Home Assistant (or anything else).
+#
+#   docker compose build
+#   docker compose run --rm chorepilot setup        # interactive: you become the owner
+#   docker compose up -d
+#   open http://127.0.0.1:8771                      # the dashboard
+#
+# State (house.json, the chore database, tokens, 0600 secrets) lives in ./data.
+services:
+  chorepilot:
+    build: .
+    image: chorepilot:latest
+    container_name: chorepilot
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: "Etc/UTC"                                   # your time zone: chores are scheduled in it
+      # A model server on the Docker host (llama-server, Ollama, LM Studio ...):
+      # CHOREPILOT_LLM_URL: "http://host.docker.internal:8080"
+      # Home Assistant (or answer the setup wizard instead):
+      # HA_URL: "http://homeassistant.local:8123"
+      # HA_TOKEN: "..."                               # prefer the wizard: it stores it 0600 in ./data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8771:8771"                         # dashboard (localhost only)
+      - "127.0.0.1:8770:8770"                         # MCP for local agents (needs a token)

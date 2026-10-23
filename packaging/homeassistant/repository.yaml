@@ -1,0 +1,4 @@
+# Add this folder (or the repository that hosts it) to Home Assistant:
+# Settings > Add-ons > Add-on store > ... > Repositories.
+name: ChorePilot add-ons
+maintainer: ChorePilot contributors
